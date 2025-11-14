@@ -1,0 +1,5 @@
+let s: string = "Hello!";
+print(s);
+
+let n: int = 5;
+print(n);
