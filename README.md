@@ -1,37 +1,39 @@
 # MyLang Compiler (`mycc`)
 
-MyLang adalah bahasa pemrograman sederhana mirip C, tetapi memiliki sistem *ownership* ala Rust:
-- Mendukung move semantics
-- Borrow (`&T`) dan mutable borrow (`&mut T`)
-- Drop otomatis untuk tipe heap (misalnya `string`)
-- Borrow checker statis (tanpa garbage collector)
+MyLang is a lightweight programming language inspired by C, but equipped with Rust-like ownership:
+- Move semantics  
+- Immutable borrow (`&T`) and mutable borrow (`&mut T`)  
+- Automatic drop for heap types (e.g., `string`)  
+- Static borrow checker (no garbage collector)
 
-Compiler ini ditulis sepenuhnya dalam **C (C99)** dan menghasilkan **assembly x86_64 (NASM)** yang dapat dijalankan di:
+The compiler is fully written in **C (C99)** and produces **x86_64 NASM assembly**, targeting:
 - Linux (ELF64 / SysV ABI)
 - Windows (Win64 / Microsoft x64 ABI)
 
 ---
 
-## ✨ Fitur Bahasa
+## ✨ Language Features
 
-### Tipe Data
+### Data Types
 - `int`
 - `string`
-- `&T` immutable reference
-- `&mut T` mutable reference
-- `Rc<T>` (future plan)
+- `&T` (immutable reference)
+- `&mut T` (mutable reference)
+- `Rc<T>` (planned feature)
 
-### Variabel
-```
+### Variables
+```mylang
 let x: int = 10;
 let s: string = "Hello";
-let y = x;    // move: x tidak valid lagi
-let r = &x;   // borrow
-let mr = &mut x; // mutable borrow
+
+let y = x;        // move: x becomes invalid
+
+let r = &x;       // immutable borrow
+let mr = &mut x;  // mutable borrow
 ```
 
-### Kontrol Alur
-```
+### Control Flow
+```mylang
 if (cond) {
 } else {
 }
@@ -43,52 +45,39 @@ while (cond) {
 ### Built-in Functions
 - `print(x)`
 - `clone(s)`
-- Auto-drop string pada scope exit
+- Automatic drop for `string` at scope exit
 
 ---
 
-## 🧠 Arsitektur Compiler
+## 🧠 Compiler Architecture
 
-Pipeline compiler:
+Compiler pipeline:
 
-1. **Lexer**  
-   Membaca karakter → token.
-
-2. **Parser**  
-   Recursive descent parser → AST.
-
-3. **AST**  
-   Representasi struktur program.
-
+1. **Lexer** — converts characters to tokens  
+2. **Parser** — recursive descent → AST  
+3. **AST** — structural program representation  
 4. **Semantic Analyzer**  
-   Mengecek:
    - Type checking  
-   - Scope  
-   - Variabel tidak dideklarasi  
-
+   - Scope validation  
+   - Undefined variable detection  
 5. **Borrow Checker**  
-   Memastikan:
-   - After move, var invalid  
-   - Banyak immutable borrow OK  
-   - Hanya satu mutable borrow  
-   - Borrow tidak melebihi lifetime owner  
-   - Tidak boleh mutable + immutable bersamaan  
-
+   - No use-after-move  
+   - Many immutable borrows allowed  
+   - Only one mutable borrow  
+   - Borrow cannot outlive owner  
+   - No mixing mutable + immutable borrow  
 6. **Code Generator**  
-   Menghasilkan NASM x86_64 ASM:
-   - ELF64 (Linux)  
-   - Win64 (Windows)  
-
-7. **Runtime**  
-   Implementasi:
-   - `runtime_new_string`
-   - `runtime_clone_string`
-   - `runtime_print_string`
-   - `runtime_print_int`
+   - Outputs NASM x86_64 assembly  
+   - Supports ELF64 & Win64  
+7. **Runtime Library**  
+   - `runtime_new_string`  
+   - `runtime_clone_string`  
+   - `runtime_print_string`  
+   - `runtime_print_int`  
 
 ---
 
-## 📁 Struktur Direktori
+## 📁 Directory Structure
 
 ```
 mylang/
@@ -101,40 +90,40 @@ mylang/
 
 ---
 
-## 🔧 Build Compiler
+## 🔧 Building the Compiler
 
 ### Linux
-```
+```sh
 make
 ```
 
-### Windows (MSYS2/Mingw64)
-```
+### Windows (MSYS2 / Mingw64)
+```sh
 make
 ```
 
 ---
 
-## ▶️ Compile Program MyLang
+## ▶️ Compiling a MyLang Program
 
-```
+```sh
 mycc input.my -o output
 ```
 
 ---
 
-## ⚙️ Assemble & Link (via Makefile)
+## ⚙️ Assemble & Link (using Makefile)
 
-```
+```sh
 make example
 make run-example
 ```
 
 ---
 
-## 🧪 Contoh Program
+## 🧪 Example Program
 
-```
+```mylang
 let s: string = "Hello!";
 print(s);
 
@@ -144,23 +133,23 @@ print(n);
 
 ---
 
-## ❗ Borrow Checker Contoh
+## ❗ Borrow Checker Examples
 
-### Error (use-after-move)
-```
+### Error: Use-after-move
+```mylang
 let a = 10;
 let b = a;
-print(a);   // ERROR
+print(a);     // ERROR: a was moved
 ```
 
-### Error (mutable + immutable borrow)
-```
+### Error: Mutable + Immutable Borrow
+```mylang
 let x = 1;
 let r = &x;
-let m = &mut x;  // ERROR
+let m = &mut x;   // ERROR: cannot mutably borrow while immutably borrowed
 ```
 
 ---
 
-## 📜 Lisensi
+## 📜 License
 MIT License.
