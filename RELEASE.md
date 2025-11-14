@@ -57,6 +57,4 @@ This will compile the compiler (`mycc`) and runtime components.
 
 ## 🎨 Logo (SVG)
 
-```svg
 <svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="150" fill="#2b2b2b"/><circle cx="120" cy="60" r="10" fill="#4caf50"/><circle cx="180" cy="60" r="10" fill="#4caf50"/><path d="M95 90 Q150 140 205 90" stroke="#4caf50" stroke-width="12" fill="transparent" stroke-linecap="round"/><text x="280" y="100" text-anchor="middle" font-size="50" font-family="Arial, sans-serif" fill="white">MYLANG</text></svg>
-```
