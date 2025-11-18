@@ -158,5 +158,7 @@ let m = &mut x;   // ERROR: cannot mutably borrow while immutably borrowed
 
 ## 📜 License
 MIT License.
+[LICENSE](LICENSE)
+
 
 
