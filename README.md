@@ -3,6 +3,8 @@ See the full changelog here → [CHANGELOG.md](CHANGELOG.md)
 
 # MyLang Compiler (`mycc`)
 
+<img src="./logo.svg">
+
 MyLang is a lightweight programming language inspired by C, but equipped with Rust-like ownership:
 - Move semantics  
 - Immutable borrow (`&T`) and mutable borrow (`&mut T`)  
@@ -156,4 +158,5 @@ let m = &mut x;   // ERROR: cannot mutably borrow while immutably borrowed
 
 ## 📜 License
 MIT License.
+
 
