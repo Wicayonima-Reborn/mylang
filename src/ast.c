@@ -1,6 +1,6 @@
-/* src/ast.c
- * AST node constructors + simple pretty printer.
- */
+/*
+    AST node constructors + simple pretty printer.
+*/
 
 #include "../include/ast.h"
 #include "../include/common.h"
@@ -237,4 +237,5 @@ void ast_print_function(Function *f) {
 void ast_free_function(Function *f) {
     // no-op (free not implemented)
     (void)f;
+
 }
