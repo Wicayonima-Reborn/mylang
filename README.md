@@ -17,7 +17,7 @@ The compiler is fully written in **C (C99)** and produces **x86_64 NASM assembly
 
 ---
 
-## ✨ Language Features
+## Language Features
 
 ### Data Types
 - `int`
@@ -95,7 +95,7 @@ mylang/
 
 ---
 
-## 🔧 Building the Compiler
+## Building the Compiler
 
 ### Linux
 ```sh
@@ -109,7 +109,7 @@ make
 
 ---
 
-## ▶️ Compiling a MyLang Program
+## Compiling a MyLang Program
 
 ```sh
 mycc input.my -o output
@@ -117,7 +117,7 @@ mycc input.my -o output
 
 ---
 
-## ⚙️ Assemble & Link (using Makefile)
+## Assemble & Link (using Makefile)
 
 ```sh
 make example
@@ -126,7 +126,7 @@ make run-example
 
 ---
 
-## 🧪 Example Program
+## Example Program
 
 ```mylang
 let s: string = "Hello!";
@@ -138,7 +138,7 @@ print(n);
 
 ---
 
-## ❗ Borrow Checker Examples
+## Borrow Checker Examples
 
 ### Error: Use-after-move
 ```mylang
@@ -159,6 +159,7 @@ let m = &mut x;   // ERROR: cannot mutably borrow while immutably borrowed
 ## 📜 License
 MIT License.
 [LICENSE](LICENSE)
+
 
 
 
