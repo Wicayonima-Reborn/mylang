@@ -43,7 +43,7 @@ static char peek(Lexer *l) {
 
 static char getc_lex(Lexer *l) {
     char c = l->src[l->pos];
-    if (c == 0) return 0;
+    if (!c) return 0;
 
     l->pos++;
     if (c == '\n') {
@@ -77,8 +77,7 @@ Token lexer_next(Lexer *l) {
 
     /* string literal */
     if (c == '"') {
-        getc_lex(l); // consume opening quote
-
+        getc_lex(l);
         int i = 0;
         while (peek(l) && peek(l) != '"') {
             t.lexeme[i++] = getc_lex(l);
@@ -86,12 +85,11 @@ Token lexer_next(Lexer *l) {
         t.lexeme[i] = 0;
 
         if (peek(l) != '"') {
-            errorf("Unterminated string literal at %d:%d\n", t.line, t.col);
+            errorf("Unterminated string at %d:%d\n", t.line, t.col);
             exit(1);
         }
 
-        getc_lex(l); // consume closing quote
-
+        getc_lex(l);
         t.kind = T_STRLIT;
         return t;
     }
@@ -99,18 +97,16 @@ Token lexer_next(Lexer *l) {
     /* integer literal */
     if (isdigit(c)) {
         long val = 0;
-
         while (isdigit(peek(l))) {
             val = val * 10 + (getc_lex(l) - '0');
         }
-
         t.kind = T_INTLIT;
         t.int_val = val;
         sprintf(t.lexeme, "%ld", val);
         return t;
     }
 
-    /* identifier / keywords */
+    /* identifier / keyword */
     if (is_ident_start(c)) {
         int i = 0;
         while (is_ident_char(peek(l))) {
@@ -120,6 +116,10 @@ Token lexer_next(Lexer *l) {
 
         if (strcmp(t.lexeme, "let") == 0) {
             t.kind = T_LET;
+        } else if (strcmp(t.lexeme, "for") == 0) {
+            t.kind = T_FOR;
+        } else if (strcmp(t.lexeme, "in") == 0) {
+            t.kind = T_IN;
         } else if (strcmp(t.lexeme, "int") == 0) {
             t.kind = T_INT_TYPE;
         } else if (strcmp(t.lexeme, "string") == 0) {
@@ -143,16 +143,16 @@ Token lexer_next(Lexer *l) {
         case '}': t.kind = T_RBRACE; return t;
         case '(': t.kind = T_LPAREN; return t;
         case ')': t.kind = T_RPAREN; return t;
+        case '[': t.kind = T_LBRACKET; return t;
+        case ']': t.kind = T_RBRACKET; return t;
         case ';': t.kind = T_SEMI; return t;
         case ':': t.kind = T_COLON; return t;
         case '=': t.kind = T_EQ; return t;
         case ',': t.kind = T_COMMA; return t;
 
-        case '&': {
-            /* detect &mut (3 chars: m u t) */
+        case '&':
             if (peek(l) == 'm') {
-                // &mut
-                getc_lex(l); // m
+                getc_lex(l);
                 if (peek(l) == 'u') getc_lex(l);
                 if (peek(l) == 't') getc_lex(l);
                 t.kind = T_ANDMUT;
@@ -160,7 +160,16 @@ Token lexer_next(Lexer *l) {
                 t.kind = T_AND;
             }
             return t;
-        }
+
+        case '.':
+            if (peek(l) == '.') {
+                getc_lex(l);
+                t.kind = T_DOTDOT;
+                strcpy(t.lexeme, "..");
+                return t;
+            }
+            errorf("Unexpected '.' at %d:%d\n", l->line, l->col);
+            exit(1);
     }
 
     errorf("Unknown character '%c' at %d:%d\n", c, l->line, l->col);

@@ -1,4 +1,3 @@
-// include/lexer.h
 #ifndef LEXER_H
 #define LEXER_H
 
@@ -17,23 +16,30 @@ typedef struct {
 typedef enum {
     T_EOF = 0,
 
+    /* literals */
     T_INTLIT,
     T_STRLIT,
     T_IDENT,
 
-    T_PRINT,       // keyword print
-    T_LET,         // let
-    T_INT_TYPE,    // int
-    T_STRING_TYPE, // string
+    /* keywords */
+    T_PRINT,
+    T_LET,
+    T_FOR,
+    T_IN,
+    T_INT_TYPE,
+    T_STRING_TYPE,
 
+    /* symbols */
     T_LPAREN, T_RPAREN,
     T_LBRACE, T_RBRACE,
+    T_LBRACKET, T_RBRACKET,
     T_COMMA, T_SEMI,
     T_COLON, T_EQ,
 
-    T_AND,         // &
-    T_ANDMUT       // &mut
+    T_AND,
+    T_ANDMUT,
 
+    T_DOTDOT          /* .. */
 } TokenKind;
 
 typedef struct {
