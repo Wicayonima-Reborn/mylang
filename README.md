@@ -1,127 +1,221 @@
-## 📜 Changelog
-See the full changelog here → [CHANGELOG.md](CHANGELOG.md)
-
 # MyLang Compiler (`mycc`)
 
-<img src="./logo.svg">
+![Build](https://img.shields.io/badge/build-manual-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-brightgreen)
+![Arch](https://img.shields.io/badge/arch-x86__64-orange)
 
-MyLang is a lightweight programming language inspired by C, but equipped with Rust-like ownership:
-- Move semantics  
-- Immutable borrow (`&T`) and mutable borrow (`&mut T`)  
-- Automatic drop for heap types (e.g., `string`)  
-- Static borrow checker (no garbage collector)
+<img src="./logo.svg" alt="MyLang Logo" width="360" />
 
-The compiler is fully written in **C (C99)** and produces **x86_64 NASM assembly**, targeting:
-- Linux (ELF64 / SysV ABI)
-- Windows (Win64 / Microsoft x64 ABI)
+MyLang is a **lightweight systems programming language** inspired by C, designed with **Rust-like ownership and borrowing**, but implemented with a **minimal and explicit model**.
+
+The main goal of MyLang is to provide **memory safety without garbage collection**, while keeping the compiler simple, transparent, and educational.
+
+The compiler is written entirely in **C (C99)** and generates **x86_64 NASM assembly**, targeting:
+
+* **Linux** (ELF64 / SysV ABI)
+* **Windows** (Win64 / Microsoft x64 ABI)
+
+> Philosophy: *C-like syntax, Rust-like safety, no GC, no hidden magic.*
 
 ---
 
-## Language Features
+## Key Features
 
-### Data Types
-- `int`
-- `string`
-- `&T` (immutable reference)
-- `&mut T` (mutable reference)
-- `Rc<T>` (planned feature)
+* Explicit move semantics (single ownership model)
+* Immutable (`&T`) and mutable (`&mut T`) borrowing
+* Static borrow checker (compile-time enforcement)
+* Automatic `drop` for heap-allocated types (`string`)
+* No garbage collector
+* Clear and strict diagnostics for ownership and borrow errors
 
-### Variables
+---
+
+## Design Goals
+
+MyLang is built with the following goals in mind:
+
+* **Predictable memory behavior** — no runtime GC, no implicit cloning
+* **Explicit ownership** — every value has a clear owner
+* **Compile-time safety** — memory errors are rejected before execution
+* **Minimal compiler complexity** — easy to read, hack, and extend
+* **Educational value** — suitable for learning compiler construction and ownership models
+
+---
+
+## ❓ Why MyLang Exists
+
+Modern systems languages often trade simplicity for abstraction.
+
+MyLang exists to explore a middle ground:
+
+* Safer than C
+* Simpler than Rust
+* Explicit rather than magical
+
+It is designed for:
+
+* Compiler and language design experiments
+* Studying ownership and borrow checking concepts
+* Building small, safe, low-level programs
+
+---
+
+## Data Types
+
+* `int`
+* `string` (heap-allocated, automatically dropped)
+* `&T` (immutable reference)
+* `&mut T` (mutable reference)
+* `Rc<T>` *(planned, not implemented yet)*
+
+Example:
+
 ```mylang
 let x: int = 10;
 let s: string = "Hello";
 
-let y = x;        // move: x becomes invalid
+let y = x;        // move → x becomes invalid
 
-let r = &x;       // immutable borrow
-let mr = &mut x;  // mutable borrow
+let r = &y;       // immutable borrow
+// let mr = &mut y; // ERROR while r is alive
 ```
 
-### Control Flow
+---
+
+## Variables & Ownership
+
+* All assignments use **move semantics** by default
+* After a value is moved, the previous variable becomes invalid
+
+```mylang
+let a = 10;
+let b = a;
+print(a); // ERROR: use-after-move
+```
+
+Explicit cloning for heap types:
+
+```mylang
+let s1: string = "hi";
+let s2 = clone(s1); // deep clone
+```
+
+---
+
+## 🔁 Control Flow
+
 ```mylang
 if (cond) {
+    print(1);
 } else {
+    print(0);
 }
 
 while (cond) {
+    print(cond);
 }
 ```
 
-### Built-in Functions
-- `print(x)`
-- `clone(s)`
-- Automatic drop for `string` at scope exit
+---
+
+## 🧠 Borrow Checker Rules
+
+The MyLang borrow checker enforces:
+
+* No use-after-move
+* Multiple immutable borrows are allowed
+* Only one mutable borrow at a time
+* Mutable and immutable borrows cannot coexist
+* Borrows must not outlive their owner
+
+### ❌ Mutable + Immutable Borrow
+
+```mylang
+let x = 1;
+let r = &x;
+let m = &mut x; // ERROR
+```
+
+### ❌ Use-after-move
+
+```mylang
+let a = 10;
+let b = a;
+print(a); // ERROR
+```
 
 ---
 
-## 🧠 Compiler Architecture
+## Built-in Functions
+
+* `print(int)`
+* `print(string)`
+* `clone(string) -> string`
+* Automatic `drop` at scope exit
+
+---
+
+## Compiler Architecture
 
 Compiler pipeline:
 
-1. **Lexer** — converts characters to tokens  
-2. **Parser** — recursive descent → AST  
-3. **AST** — structural program representation  
-4. **Semantic Analyzer**  
-   - Type checking  
-   - Scope validation  
-   - Undefined variable detection  
-5. **Borrow Checker**  
-   - No use-after-move  
-   - Many immutable borrows allowed  
-   - Only one mutable borrow  
-   - Borrow cannot outlive owner  
-   - No mixing mutable + immutable borrow  
-6. **Code Generator**  
-   - Outputs NASM x86_64 assembly  
-   - Supports ELF64 & Win64  
-7. **Runtime Library**  
-   - `runtime_new_string`  
-   - `runtime_clone_string`  
-   - `runtime_print_string`  
-   - `runtime_print_int`  
+1. **Lexer** — characters → tokens
+2. **Parser** — recursive descent → AST
+3. **AST** — structural representation
+4. **Semantic Analyzer**
+
+   * Type checking
+   * Scope validation
+   * Undefined variable detection
+5. **Borrow Checker** — ownership & lifetime validation
+6. **Code Generator**
+
+   * NASM x86_64 assembly
+   * ELF64 & Win64 ABI
+7. **Runtime Library**
+
+   * `runtime_new_string`
+   * `runtime_clone_string`
+   * `runtime_print_string`
+   * `runtime_print_int`
 
 ---
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 mylang/
-├── include/
-├── src/
-├── examples/
-├── docs/
+├── include/     # Headers
+├── src/         # Compiler source
+├── runtime/     # Runtime library
+├── examples/    # Example programs
+├── docs/        # Documentation
 └── Makefile
 ```
 
 ---
 
-## Building the Compiler
+## 🔧 Building the Compiler
 
 ### Linux
+
 ```sh
 make
 ```
 
-### Windows (MSYS2 / Mingw64)
+### Windows (MSYS2 / MinGW64)
+
 ```sh
 make
 ```
 
 ---
 
-## Compiling a MyLang Program
+## Compiling a Program
 
 ```sh
 mycc input.my -o output
-```
-
----
-
-## Assemble & Link (using Makefile)
-
-```sh
-make example
-make run-example
 ```
 
 ---
@@ -138,28 +232,33 @@ print(n);
 
 ---
 
-## Borrow Checker Examples
+## Project Status
 
-### Error: Use-after-move
-```mylang
-let a = 10;
-let b = a;
-print(a);     // ERROR: a was moved
-```
+This project is **early-stage and experimental**.
 
-### Error: Mutable + Immutable Borrow
-```mylang
-let x = 1;
-let r = &x;
-let m = &mut x;   // ERROR: cannot mutably borrow while immutably borrowed
-```
+* Not all features are stable
+* APIs and semantics may change
+* Intended primarily for learning and experimentation
 
 ---
 
-## 📜 License
-MIT License.
-[LICENSE](LICENSE)
+## Roadmap
 
+* `Rc<T>` / shared ownership
+* Functions and return values
+* Structs and user-defined types
+* Improved borrow checker diagnostics
+* Simple optimizer
 
+---
 
+## Changelog
 
+See full history at:
+👉 [CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
