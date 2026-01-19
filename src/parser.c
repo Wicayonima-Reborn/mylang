@@ -1,3 +1,11 @@
+/**
+ * @file parser.c
+ * @brief Implementasi Recursive Descent Parser untuk MyLang.
+ * * Parser ini bertanggung jawab untuk mengubah aliran token (token stream) menjadi 
+ * Abstract Syntax Tree (AST). Menggunakan teknik Predictive Parsing dengan 
+ * satu token lookahead (cur).
+ */
+
 #include "../include/parser.h"
 #include "../include/lexer.h"
 #include "../include/ast.h"
@@ -7,91 +15,95 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/**
- * PARSER STATE
- * Global state for the recursive descent parser.
+/** * @brief State internal parser.
+ * L: Instance lexer untuk pemindaian karakter.
+ * cur: Buffer untuk token saat ini (lookahead).
  */
 static Token cur;
 static Lexer L;
 
 /* ---------------------------------------------------------
    PARSER UTILITIES
-   Internal helper functions for token stream navigation.
    --------------------------------------------------------- */
 
-/** Advances the lexer to the next token in the stream. */
+/**
+ * @brief Mengambil token berikutnya dari lexer dan menyimpannya ke state 'cur'.
+ */
 static void nexttok() {
     cur = lexer_next(&L);
 }
 
-/** Checks if the current token matches the specified kind. */
+/**
+ * @brief Memeriksa apakah token saat ini sesuai dengan jenis yang diharapkan.
+ */
 static bool tok_is(TokenKind k) {
     return cur.kind == k;
 }
 
-/** * Enforces token matching. Advances on success, 
- * terminates with a diagnostic message on failure. 
+/**
+ * @brief Memastikan token saat ini adalah jenis 'k', jika tidak maka memicu error fatal.
+ * Jika sesuai, parser akan berlanjut ke token berikutnya (consume).
  */
 static void expect(TokenKind k, const char *msg) {
     if (!tok_is(k)) {
         errorf("Parse error at %d:%d: expected %s (got '%s')\n",
-               cur.line, cur.col, msg, cur.lexeme);
+                cur.line, cur.col, msg, cur.lexeme);
     }
     nexttok();
 }
 
-/* Forward declarations for recursive descent */
-static Expr* parse_expr();
-static Expr* parse_primary();
-static Stmt* parse_stmt();
-static Stmt* parse_block();
+/* Forward declarations untuk menangani mutual recursion pada grammar */
+static Expr *parse_expr();
+static Expr *parse_primary();
+static Stmt *parse_stmt();
+static Stmt *parse_block();
 
 /* ---------------------------------------------------------
-   EXPRESSION PARSING
-   Implements precedence climbing and primary atom parsing.
+   EXPRESSION PARSING (Precedence: Primary > Range)
    --------------------------------------------------------- */
 
 /**
- * @brief Parses primary expressions (literals, identifiers, calls, arrays).
- * Handles high-precedence postfix operators like indexing and function calls.
+ * @brief Menangani unit ekspresi terkecil (Atoms).
+ * Mencakup literal, identifikasi variabel, pemanggilan fungsi, indexing array, 
+ * dan operasi pengambilan alamat (borrowing).
+ * * Grammar:
+ * Primary -> INTLIT | STRLIT | IDENT ('(' args? ')')? ('[' expr ']')* | '[' items? ']' | '&' Primary
  */
-static Expr* parse_primary() {
+static Expr *parse_primary() {
     int l = cur.line, c = cur.col;
 
-    /* Integer constant literal */
+    // Handle Integer Literals
     if (tok_is(T_INTLIT)) {
         long v = cur.int_val;
         nexttok();
         return expr_int(v, l, c);
     }
 
-    /* String constant literal */
+    // Handle String Literals
     if (tok_is(T_STRLIT)) {
         char *s = strdup(cur.lexeme);
         nexttok();
         return expr_str(s, l, c);
     }
 
-    /* Identifier-based nodes: Variables, Function Calls, or Indexing */
+    // Handle Identifiers, Function Calls, and Array Indexing
     if (tok_is(T_IDENT) || tok_is(T_PRINT)) {
         char name[MAX_IDENT];
-        strncpy(name, cur.lexeme, MAX_IDENT - 1);
-        name[MAX_IDENT - 1] = 0;
+        snprintf(name, sizeof(name), "%s", cur.lexeme);
         nexttok();
 
         Expr *base = expr_ident(name, l, c);
 
-        /* Subroutine invocation (Function Call) */
+        // Pencabangan untuk Function Call: ident(...)
         if (tok_is(T_LPAREN)) {
             nexttok();
-
             Expr **args = NULL;
             int nargs = 0;
 
             if (!tok_is(T_RPAREN)) {
                 while (1) {
                     Expr *a = parse_expr();
-                    args = realloc(args, sizeof(Expr*) * (nargs + 1));
+                    args = realloc(args, sizeof(Expr *) * (nargs + 1));
                     args[nargs++] = a;
 
                     if (tok_is(T_COMMA)) {
@@ -101,12 +113,11 @@ static Expr* parse_primary() {
                     break;
                 }
             }
-
             expect(T_RPAREN, "')'");
             base = expr_call(name, args, nargs, l, c);
         }
 
-        /* Postfix array indexing: <base>[<expr>] */
+        // Pencabangan untuk Postfix Array Indexing: ident[idx]
         while (tok_is(T_LBRACKET)) {
             nexttok();
             Expr *idx = parse_expr();
@@ -117,17 +128,16 @@ static Expr* parse_primary() {
         return base;
     }
 
-    /* Array literal: [<expr>, <expr>, ...] */
+    // Handle Array Literal: [1, 2, 3]
     if (tok_is(T_LBRACKET)) {
         nexttok();
-
         Expr **items = NULL;
         int count = 0;
 
         if (!tok_is(T_RBRACKET)) {
             while (1) {
                 Expr *e = parse_expr();
-                items = realloc(items, sizeof(Expr*) * (count + 1));
+                items = realloc(items, sizeof(Expr *) * (count + 1));
                 items[count++] = e;
 
                 if (tok_is(T_COMMA)) {
@@ -137,12 +147,11 @@ static Expr* parse_primary() {
                 break;
             }
         }
-
         expect(T_RBRACKET, "']'");
         return expr_array(items, count, l, c);
     }
 
-    /* Unary reference operators: &expr or &mut expr */
+    // Handle Borrowing / Referencing: &x atau &mut x
     if (tok_is(T_AND) || tok_is(T_ANDMUT)) {
         bool mut = tok_is(T_ANDMUT);
         nexttok();
@@ -155,13 +164,13 @@ static Expr* parse_primary() {
 }
 
 /**
- * @brief General expression parser.
- * Currently handles binary range operators and delegates to primary parsing.
+ * @brief Entry point untuk parsing ekspresi.
+ * Saat ini menangani operator Range (..) dengan presedensi terendah.
+ * * Grammar: Expr -> Primary ( '..' Primary )?
  */
-static Expr* parse_expr() {
+static Expr *parse_expr() {
     Expr *lhs = parse_primary();
 
-    /* Range expression: <expr> .. <expr> */
     if (tok_is(T_DOTDOT)) {
         int l = cur.line, c = cur.col;
         nexttok();
@@ -174,16 +183,16 @@ static Expr* parse_expr() {
 
 /* ---------------------------------------------------------
    STATEMENT PARSING
-   Handles declarations and control flow structures.
    --------------------------------------------------------- */
 
 /**
- * @brief Parses a single statement unit.
+ * @brief Dispatcher utama untuk berbagai jenis statement.
+ * Menangani deklarasi (let), perulangan (for), blok kode, dan expression statements.
  */
-static Stmt* parse_stmt() {
+static Stmt *parse_stmt() {
     int l = cur.line, c = cur.col;
 
-    /* Variable declaration: let <id> [: <type>] [= <init>]; */
+    // 1. Variable Declaration: let name: type = init;
     if (tok_is(T_LET)) {
         nexttok();
 
@@ -192,14 +201,13 @@ static Stmt* parse_stmt() {
         }
 
         char name[MAX_IDENT];
-        strncpy(name, cur.lexeme, MAX_IDENT - 1);
-        name[MAX_IDENT - 1] = 0;
+        snprintf(name, sizeof(name), "%s", cur.lexeme);
         nexttok();
 
-        Type ty = mktype(TY_UNKNOWN);
+        Type ty = mktype(TY_UNKNOWN); // Default untuk Type Inference
         Expr *init = NULL;
 
-        /* Optional explicit type annotation */
+        // Optional Type Annotation: let x: int
         if (tok_is(T_COLON)) {
             nexttok();
             if (tok_is(T_INT_TYPE)) {
@@ -213,7 +221,7 @@ static Stmt* parse_stmt() {
             }
         }
 
-        /* Optional assignment/initialization */
+        // Optional Assignment
         if (tok_is(T_EQ)) {
             nexttok();
             init = parse_expr();
@@ -223,7 +231,7 @@ static Stmt* parse_stmt() {
         return stmt_decl(name, ty, init, l, c);
     }
 
-    /* Iterator loop: for <var> in <iter> <block> */
+    // 2. For Loop: for var in iter { ... }
     if (tok_is(T_FOR)) {
         nexttok();
 
@@ -232,8 +240,7 @@ static Stmt* parse_stmt() {
         }
 
         char var[MAX_IDENT];
-        strncpy(var, cur.lexeme, MAX_IDENT - 1);
-        var[MAX_IDENT - 1] = 0;
+        snprintf(var, sizeof(var), "%s", cur.lexeme);
         nexttok();
 
         expect(T_IN, "'in'");
@@ -243,21 +250,22 @@ static Stmt* parse_stmt() {
         return stmt_for(var, iter, body, l, c);
     }
 
-    /* Scoped block statement */
+    // 3. Block Statement: { ... }
     if (tok_is(T_LBRACE)) {
         return parse_block();
     }
 
-    /* Fallback: Expression statement */
+    // 4. Expression Statement: call();
     Expr *e = parse_expr();
     expect(T_SEMI, "';'");
     return stmt_expr(e, l, c);
 }
 
 /**
- * @brief Parses a compound statement (lexical block).
+ * @brief Memproses sekumpulan statement di dalam kurung kurawal.
+ * Mengimplementasikan scoping level pada level sintaksis.
  */
-static Stmt* parse_block() {
+static Stmt *parse_block() {
     int l = cur.line, c = cur.col;
     expect(T_LBRACE, "'{'");
 
@@ -269,7 +277,7 @@ static Stmt* parse_block() {
             errorf("Unexpected EOF inside block\n");
         }
         Stmt *s = parse_stmt();
-        list = realloc(list, sizeof(Stmt*) * (n + 1));
+        list = realloc(list, sizeof(Stmt *) * (n + 1));
         list[n++] = s;
     }
 
@@ -282,24 +290,29 @@ static Stmt* parse_block() {
    --------------------------------------------------------- */
 
 /**
- * @brief Top-level entry point for the parser.
- * Orchestrates lexing and AST construction for the entire source file.
+ * @brief Fungsi utama untuk memulai proses parsing program.
+ * Inisialisasi lexer dan membangun root node dari AST (biasanya fungsi main).
+ * * @param filename Path file sumber yang akan diparsing.
+ * @return Function* Pointer ke root node AST program.
  */
-Function* parse_program(const char *filename) {
+Function *parse_program(const char *filename) {
+    // Inisialisasi stream scanner
     lexer_init(&L, filename);
+    
+    // Seed lookahead pertama
     nexttok();
 
     Stmt **list = NULL;
     int n = 0;
 
-    /* Global statement list */
+    // Parsing hingga End of File
     while (!tok_is(T_EOF)) {
         Stmt *s = parse_stmt();
-        list = realloc(list, sizeof(Stmt*) * (n + 1));
+        list = realloc(list, sizeof(Stmt *) * (n + 1));
         list[n++] = s;
     }
 
-    /* Encapsulate global statements into main entry point */
+    // Membungkus semua statement global ke dalam blok fungsi main implisit
     Stmt *body = stmt_block(list, n, 0, 0);
     return make_main(body);
 }
