@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     printf("Generated asm: %s\n", asmfile);
     printf(">> nasm -f elf64 %s -o %s.o\n", asmfile, outfile);
     printf(">> gcc %s.o runtime.o -o %s\n", outfile, outfile);
-    printf(">> ./\%s\n", outfile);
+    printf(">> ./%s\n", outfile);
 #endif
 
     return 0;
