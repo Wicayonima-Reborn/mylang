@@ -1,2 +1,11 @@
 .vscode
 ./vscode
+# Build artifacts
+build/
+*.exe
+*.obj
+*.o
+*.asm
+
+# Temporary
+*.log

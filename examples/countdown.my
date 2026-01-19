@@ -1,16 +1,7 @@
-// examples/countdown.my
-// Demonstrates ownership, borrowing, clone, and print.
-
 let s: string = "Hello, world!";
-let s2 = clone(s);   // clone -> s still valid, s2 is new owner
-print(s);            // print by value (string)
+let s2 = clone(s);
+print(s);
 print(s2);
 
 let n: int = 5;
-let r = &n;          // immutable borrow
-print(*r);           // note: in this minimal compiler we didn't implement * deref; instead do print(n);
-
-while (n) {
-    print(n);
-    let n = n - 1;   // shadowing demonstrates move semantics on int
-}
+print(n);

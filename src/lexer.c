@@ -133,7 +133,7 @@ Token lexer_next(Lexer *l) {
         }
         if (c == '\n') {
             getc_lex(l);
-            return make_token(T_EOL, NULL, 0, l->line - 1, 1);
+            continue;
         }
         if (isspace((unsigned char)c)) {
             getc_lex(l);

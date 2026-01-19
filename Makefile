@@ -1,6 +1,6 @@
 # ============================
 # Cross-Platform Makefile
-# Works on Linux, WSL, Git Bash, MinGW
+# Safe for PowerShell, CMD, Git Bash, WSL, Linux
 # ============================
 
 # -------- OS detection --------
@@ -9,56 +9,77 @@ OBJ_EXT = o
 EXE_EXT =
 
 ifeq ($(OS),Windows_NT)
-    ASM_FORMAT = win64
-    OBJ_EXT = obj
-    EXE_EXT = .exe
+	ASM_FORMAT = win64
+	OBJ_EXT = obj
+	EXE_EXT = .exe
 endif
 
 # -------- Tools --------
 CC = gcc
 CFLAGS = -std=c99 -O2 -Iinclude
-RM = rm -f
+RM = rm -rf
+
+# -------- Directories --------
+SRCDIR   = src
+BUILDDIR = build
+OBJDIR   = $(BUILDDIR)/obj
+BINDIR   = $(BUILDDIR)/bin
+ASMDIR   = $(BUILDDIR)/asm
 
 # -------- Sources --------
-# Compiler sources (exclude runtime)
-SRC = $(filter-out src/runtime.c, $(wildcard src/*.c))
-OBJ = $(SRC:.c=.o)
+SRC = $(filter-out $(SRCDIR)/runtime.c, $(wildcard $(SRCDIR)/*.c))
+OBJ = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.$(OBJ_EXT),$(SRC))
+RUNTIME_OBJ = $(OBJDIR)/runtime.$(OBJ_EXT)
 
 # -------- Targets --------
 all: mycc
 
-# Build compiler
-mycc: $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o mycc$(EXE_EXT)
+# -------- Directory rules --------
+$(OBJDIR):
+ifeq ($(OS),Windows_NT)
+	@if not exist $(OBJDIR) mkdir $(OBJDIR)
+else
+	@mkdir -p $(OBJDIR)
+endif
 
-# Build runtime only (for generated programs)
-runtime.o: src/runtime.c
-	$(CC) -c src/runtime.c -o runtime.o
+$(BINDIR):
+ifeq ($(OS),Windows_NT)
+	@if not exist $(BINDIR) mkdir $(BINDIR)
+else
+	@mkdir -p $(BINDIR)
+endif
+
+$(ASMDIR):
+ifeq ($(OS),Windows_NT)
+	@if not exist $(ASMDIR) mkdir $(ASMDIR)
+else
+	@mkdir -p $(ASMDIR)
+endif
+
+# -------- Build compiler --------
+mycc: $(OBJ) | $(BINDIR)
+	$(CC) $(CFLAGS) $(OBJ) -o $(BINDIR)/mycc$(EXE_EXT)
+
+# -------- Object rules --------
+$(OBJDIR)/%.$(OBJ_EXT): $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(RUNTIME_OBJ): $(SRCDIR)/runtime.c | $(OBJDIR)
+	$(CC) -c $< -o $@
 
 # -------- Example pipeline --------
-example: mycc runtime.o
-	./mycc examples/test.my -o test
-	nasm -f $(ASM_FORMAT) test.asm -o test.$(OBJ_EXT)
-	$(CC) test.$(OBJ_EXT) runtime.o -o test$(EXE_EXT)
+example: mycc $(RUNTIME_OBJ) | $(ASMDIR)
+	$(BINDIR)/mycc$(EXE_EXT) examples/test.my -o $(ASMDIR)/test
+	nasm -f $(ASM_FORMAT) $(ASMDIR)/test.asm -o $(OBJDIR)/test.$(OBJ_EXT)
+	$(CC) $(OBJDIR)/test.$(OBJ_EXT) $(RUNTIME_OBJ) -o $(BINDIR)/test$(EXE_EXT)
 
 run-example: example
-	./test$(EXE_EXT)
+	$(BINDIR)/test$(EXE_EXT)
 
-# -------- Sanity check (CI / Sonar friendly) --------
+# -------- Sanity check --------
 check: mycc
-	@echo "Running basic compiler check..."
-	./mycc --help || true
-
-# -------- Install --------
-PREFIX ?= /usr/local
-
-install: mycc
-	mkdir -p $(PREFIX)/bin
-	cp mycc$(EXE_EXT) $(PREFIX)/bin/mycc$(EXE_EXT)
-	@echo "Installed mycc to $(PREFIX)/bin"
+	$(BINDIR)/mycc$(EXE_EXT) --help || true
 
 # -------- Clean --------
 clean:
-	$(RM) src/*.o runtime.o
-	$(RM) test.asm test.$(OBJ_EXT)
-	$(RM) mycc$(EXE_EXT) test$(EXE_EXT)
+	$(RM) $(BUILDDIR)
