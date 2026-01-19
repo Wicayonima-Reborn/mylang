@@ -15,6 +15,7 @@ typedef struct {
 
 typedef enum {
     T_EOF = 0,
+    T_EOL,              /* end of line */
 
     /* literals */
     T_INTLIT,
@@ -23,6 +24,7 @@ typedef enum {
 
     /* keywords */
     T_PRINT,
+    T_PRINTLN,
     T_LET,
     T_FOR,
     T_IN,

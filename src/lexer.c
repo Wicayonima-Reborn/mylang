@@ -6,14 +6,28 @@
 #include <string.h>
 #include <stdlib.h>
 
+/** ---------------------------------------------------------
+ * SCANNING PREDICATES
+ * Character classification for identifier resolution.
+ * --------------------------------------------------------- */
+
 static int is_ident_start(char c) {
-    return isalpha(c) || c == '_';
+    return isalpha((unsigned char)c) || c == '_';
 }
 
 static int is_ident_char(char c) {
-    return isalnum(c) || c == '_';
+    return isalnum((unsigned char)c) || c == '_';
 }
 
+/** ---------------------------------------------------------
+ * LEXER LIFECYCLE
+ * Buffer management and stream initialization.
+ * --------------------------------------------------------- */
+
+/**
+ * @brief Initializes the lexer by reading the source file into a buffer.
+ * Performs a full file read to memory for fast non-sequential access.
+ */
 void lexer_init(Lexer *l, const char *filename) {
     FILE *f = fopen(filename, "rb");
     if (!f) {
@@ -21,13 +35,25 @@ void lexer_init(Lexer *l, const char *filename) {
         exit(1);
     }
 
+    /* Determine file size for buffer allocation */
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
 
     char *buf = malloc(sz + 1);
-    fread(buf, 1, sz, f);
-    buf[sz] = 0;
+    if (!buf) {
+        perror("malloc");
+        exit(1);
+    }
+
+    /* Populate buffer and ensure null-termination */
+    size_t rd = fread(buf, 1, sz, f);
+    if (rd != (size_t)sz) {
+        perror("fread");
+        exit(1);
+    }
+
+    buf[sz] = '\0';
     fclose(f);
 
     l->src = buf;
@@ -37,13 +63,20 @@ void lexer_init(Lexer *l, const char *filename) {
     l->col = 1;
 }
 
+/** ---------------------------------------------------------
+ * STREAM NAVIGATION
+ * Lookahead and consumption primitives.
+ * --------------------------------------------------------- */
+
+/** Non-consuming lookahead of the current character. Returns NUL at EOF. */
 static char peek(Lexer *l) {
     return l->src[l->pos];
 }
 
+/** Consumes the current character and updates stream coordinates. */
 static char getc_lex(Lexer *l) {
     char c = l->src[l->pos];
-    if (!c) return 0;
+    if (c == '\0') return '\0';
 
     l->pos++;
     if (c == '\n') {
@@ -55,123 +88,165 @@ static char getc_lex(Lexer *l) {
     return c;
 }
 
-Token lexer_next(Lexer *l) {
+/** ---------------------------------------------------------
+ * TOKEN GENERATION
+ * --------------------------------------------------------- */
+
+/** Factory function for creating Token structures with coordinate metadata. */
+static Token make_token(TokenKind k, const char *lex, long val, int line, int col) {
     Token t;
-    memset(&t, 0, sizeof(t));
-    t.line = l->line;
-    t.col = l->col;
+    memset(&t, 0, sizeof(Token));
 
-    char c = peek(l);
+    t.kind = k;
+    t.int_val = val;
+    t.line = line;
+    t.col = col;
 
-    /* skip whitespace */
-    while (c && isspace(c)) {
-        getc_lex(l);
-        c = peek(l);
+    if (lex) {
+        /* Safe lexeme copying with guaranteed termination */
+        snprintf(t.lexeme, sizeof(t.lexeme), "%s", lex);
+    } else {
+        t.lexeme[0] = '\0';
     }
 
-    /* EOF */
+    return t;
+}
+
+/** ---------------------------------------------------------
+ * CORE SCANNER LOGIC
+ * Implements the state machine for lexical analysis.
+ * --------------------------------------------------------- */
+
+/**
+ * @brief Scans the next token from the source stream.
+ * Handles whitespace, comments, literals, identifiers, and symbols.
+ */
+Token lexer_next(Lexer *l) {
+    Token t = make_token(T_EOF, NULL, 0, l->line, l->col);
+
+    /* Skip trivia (whitespace), reporting EOL where necessary */
+    while (1) {
+        char c = peek(l);
+        if (!c) {
+            t.kind = T_EOF;
+            return t;
+        }
+        if (c == '\n') {
+            getc_lex(l);
+            return make_token(T_EOL, NULL, 0, l->line - 1, 1);
+        }
+        if (isspace((unsigned char)c)) {
+            getc_lex(l);
+            continue;
+        }
+        break;
+    }
+
+    char c = peek(l);
     if (!c) {
         t.kind = T_EOF;
         return t;
     }
 
-    /* string literal */
+    /* String Literal Scanning (handles escape sequences) */
     if (c == '"') {
-        getc_lex(l);
+        getc_lex(l); /* Consume opening delimiter */
         int i = 0;
+
         while (peek(l) && peek(l) != '"') {
-            t.lexeme[i++] = getc_lex(l);
+            char pc = getc_lex(l);
+            if (pc == '\\' && peek(l)) {
+                /* Escape sequence translation */
+                char esc = getc_lex(l);
+                if (esc == 'n') t.lexeme[i++] = '\n';
+                else if (esc == 't') t.lexeme[i++] = '\t';
+                else t.lexeme[i++] = esc;
+            } else {
+                t.lexeme[i++] = pc;
+            }
+
+            if (i >= MAX_TOK_LEN - 1) break;
         }
-        t.lexeme[i] = 0;
+
+        t.lexeme[i] = '\0';
 
         if (peek(l) != '"') {
-            errorf("Unterminated string at %d:%d\n", t.line, t.col);
+            errorf("Unterminated string literal at %d:%d\n", t.line, t.col);
             exit(1);
         }
 
-        getc_lex(l);
+        getc_lex(l); /* Consume closing delimiter */
         t.kind = T_STRLIT;
         return t;
     }
 
-    /* integer literal */
-    if (isdigit(c)) {
+    /* Integer Literal Scanning */
+    if (isdigit((unsigned char)c)) {
         long val = 0;
-        while (isdigit(peek(l))) {
+        while (isdigit((unsigned char)peek(l))) {
             val = val * 10 + (getc_lex(l) - '0');
         }
-        t.kind = T_INTLIT;
-        t.int_val = val;
-        sprintf(t.lexeme, "%ld", val);
-        return t;
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%ld", val);
+        return make_token(T_INTLIT, buf, val, l->line, l->col);
     }
 
-    /* identifier / keyword */
+    /* Identifier and Keyword Scanning */
     if (is_ident_start(c)) {
         int i = 0;
         while (is_ident_char(peek(l))) {
-            t.lexeme[i++] = getc_lex(l);
+            if (i < MAX_TOK_LEN - 1)
+                t.lexeme[i++] = getc_lex(l);
+            else
+                getc_lex(l);
         }
-        t.lexeme[i] = 0;
+        t.lexeme[i] = '\0';
 
-        if (strcmp(t.lexeme, "let") == 0) {
-            t.kind = T_LET;
-        } else if (strcmp(t.lexeme, "for") == 0) {
-            t.kind = T_FOR;
-        } else if (strcmp(t.lexeme, "in") == 0) {
-            t.kind = T_IN;
-        } else if (strcmp(t.lexeme, "int") == 0) {
-            t.kind = T_INT_TYPE;
-        } else if (strcmp(t.lexeme, "string") == 0) {
-            t.kind = T_STRING_TYPE;
-        } else if (strcmp(t.lexeme, "print") == 0) {
-            t.kind = T_PRINT;
-        } else {
-            t.kind = T_IDENT;
-        }
+        /* Keyword Triage */
+        if (strcmp(t.lexeme, "let") == 0) t.kind = T_LET;
+        else if (strcmp(t.lexeme, "int") == 0) t.kind = T_INT_TYPE;
+        else if (strcmp(t.lexeme, "string") == 0) t.kind = T_STRING_TYPE;
+        else if (strcmp(t.lexeme, "print") == 0) t.kind = T_PRINT;
+        else if (strcmp(t.lexeme, "println") == 0) t.kind = T_PRINTLN;
+        else t.kind = T_IDENT;
 
         return t;
     }
 
-    /* symbols */
+    /* Symbol and Operator Scanning */
     c = getc_lex(l);
-    t.lexeme[0] = c;
-    t.lexeme[1] = 0;
-
     switch (c) {
-        case '{': t.kind = T_LBRACE; return t;
-        case '}': t.kind = T_RBRACE; return t;
-        case '(': t.kind = T_LPAREN; return t;
-        case ')': t.kind = T_RPAREN; return t;
-        case '[': t.kind = T_LBRACKET; return t;
-        case ']': t.kind = T_RBRACKET; return t;
-        case ';': t.kind = T_SEMI; return t;
-        case ':': t.kind = T_COLON; return t;
-        case '=': t.kind = T_EQ; return t;
-        case ',': t.kind = T_COMMA; return t;
+        case '{': return make_token(T_LBRACE, "{", 0, l->line, l->col - 1);
+        case '}': return make_token(T_RBRACE, "}", 0, l->line, l->col - 1);
+        case '(': return make_token(T_LPAREN, "(", 0, l->line, l->col - 1);
+        case ')': return make_token(T_RPAREN, ")", 0, l->line, l->col - 1);
+        case ';': return make_token(T_SEMI, ";", 0, l->line, l->col - 1);
+        case ':': return make_token(T_COLON, ":", 0, l->line, l->col - 1);
+        case '=': return make_token(T_EQ, "=", 0, l->line, l->col - 1);
+        case ',': return make_token(T_COMMA, ",", 0, l->line, l->col - 1);
 
-        case '&':
+        case '&': {
+            /* Multi-character operator lookahead for '&mut' */
             if (peek(l) == 'm') {
-                getc_lex(l);
-                if (peek(l) == 'u') getc_lex(l);
-                if (peek(l) == 't') getc_lex(l);
-                t.kind = T_ANDMUT;
-            } else {
-                t.kind = T_AND;
-            }
-            return t;
+                int saved = l->pos;
+                int ok = 1;
 
-        case '.':
-            if (peek(l) == '.') {
-                getc_lex(l);
-                t.kind = T_DOTDOT;
-                strcpy(t.lexeme, "..");
-                return t;
+                if (peek(l) == 'm') getc_lex(l); else ok = 0;
+                if (peek(l) == 'u') getc_lex(l); else ok = 0;
+                if (peek(l) == 't') getc_lex(l); else ok = 0;
+
+                if (ok)
+                    return make_token(T_ANDMUT, "&mut", 0, l->line, l->col - 1);
+
+                /* Backtrack on failed multi-char match */
+                l->pos = saved;
             }
-            errorf("Unexpected '.' at %d:%d\n", l->line, l->col);
+            return make_token(T_AND, "&", 0, l->line, l->col - 1);
+        }
+
+        default:
+            errorf("Unknown character '%c' at %d:%d\n", c, l->line, l->col - 1);
             exit(1);
     }
-
-    errorf("Unknown character '%c' at %d:%d\n", c, l->line, l->col);
-    exit(1);
 }
