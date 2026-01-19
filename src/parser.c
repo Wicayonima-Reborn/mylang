@@ -83,7 +83,7 @@ static Expr *parse_primary() {
 
     // Handle String Literals
     if (tok_is(T_STRLIT)) {
-        char *s = strdup(cur.lexeme);
+        const char *s = cur.lexeme;
         nexttok();
         return expr_str(s, l, c);
     }
