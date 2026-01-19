@@ -169,8 +169,15 @@ static void cg_emit_expr(CG *g, Expr *e) {
 
     case E_IDENT: {
         VSlot *v = cg_find(g, e->v.ident);
-        if (!v) errorf("codegen: unknown identifier '%s'\n", e->v.ident);
-        fprintf(g->out, "    mov rax, [rbp%+d]\n    push rax\n", v->offset);
+        if (!v) {
+            errorf("codegen: unknown identifier '%s' at %d:%d\n",
+                e->v.ident, e->line, e->col);
+            exit(1);
+        }
+        fprintf(g->out,
+            "    mov rax, [rbp%+d]\n"
+            "    push rax\n",
+            v->offset);
         break;
     }
 
@@ -197,8 +204,23 @@ static void cg_emit_expr(CG *g, Expr *e) {
 
     case E_ADDR:
     case E_MUTADDR: {
+        if (!e->v.inner || e->v.inner->kind != E_IDENT) {
+            errorf("codegen: & expects identifier at %d:%d\n",
+                e->line, e->col);
+            exit(1);
+        }
+
         VSlot *v = cg_find(g, e->v.inner->v.ident);
-        fprintf(g->out, "    lea rax, [rbp%+d]\n    push rax\n", v->offset);
+        if (!v) {
+            errorf("codegen: unknown identifier '%s' in & at %d:%d\n",
+                e->v.inner->v.ident, e->line, e->col);
+            exit(1);
+        }
+
+        fprintf(g->out,
+            "    lea rax, [rbp%+d]\n"
+            "    push rax\n",
+            v->offset);
         break;
     }
     default: errorf("codegen: unsupported expr kind %d\n", e->kind);
