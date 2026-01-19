@@ -1,9 +1,9 @@
 /**
  * @file parser.c
- * @brief Implementasi Recursive Descent Parser untuk MyLang.
- * * Parser ini bertanggung jawab untuk mengubah aliran token (token stream) menjadi 
- * Abstract Syntax Tree (AST). Menggunakan teknik Predictive Parsing dengan 
- * satu token lookahead (cur).
+ * @brief Implementation of a Recursive Descent Parser for MyLang.
+ *
+ * This parser transforms a flat stream of tokens into an Abstract Syntax Tree (AST).
+ * It utilizes a predictive parsing technique with a single token lookahead (LL(1)).
  */
 
 #include "../include/parser.h"
@@ -15,9 +15,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/** * @brief State internal parser.
- * L: Instance lexer untuk pemindaian karakter.
- * cur: Buffer untuk token saat ini (lookahead).
+/** * @brief Global parser state.
+ * L: The lexer instance used for scanning source characters.
+ * cur: The current lookahead token buffer.
  */
 static Token cur;
 static Lexer L;
@@ -27,22 +27,23 @@ static Lexer L;
    --------------------------------------------------------- */
 
 /**
- * @brief Mengambil token berikutnya dari lexer dan menyimpannya ke state 'cur'.
+ * @brief Fetches the next token from the lexer and updates the 'cur' state.
  */
 static void nexttok() {
     cur = lexer_next(&L);
 }
 
 /**
- * @brief Memeriksa apakah token saat ini sesuai dengan jenis yang diharapkan.
+ * @brief Checks if the current token matches a specific kind without consuming it.
  */
 static bool tok_is(TokenKind k) {
     return cur.kind == k;
 }
 
 /**
- * @brief Memastikan token saat ini adalah jenis 'k', jika tidak maka memicu error fatal.
- * Jika sesuai, parser akan berlanjut ke token berikutnya (consume).
+ * @brief Validates that the current token is of kind 'k'.
+ * If it matches, the token is consumed via nexttok(). If not, a fatal 
+ * parse error is reported.
  */
 static void expect(TokenKind k, const char *msg) {
     if (!tok_is(k)) {
@@ -52,7 +53,7 @@ static void expect(TokenKind k, const char *msg) {
     nexttok();
 }
 
-/* Forward declarations untuk menangani mutual recursion pada grammar */
+/* Forward declarations to handle mutual recursion in the grammar */
 static Expr *parse_expr();
 static Expr *parse_primary();
 static Stmt *parse_stmt();
@@ -63,10 +64,11 @@ static Stmt *parse_block();
    --------------------------------------------------------- */
 
 /**
- * @brief Menangani unit ekspresi terkecil (Atoms).
- * Mencakup literal, identifikasi variabel, pemanggilan fungsi, indexing array, 
- * dan operasi pengambilan alamat (borrowing).
- * * Grammar:
+ * @brief Parses the smallest units of the language (Atoms).
+ * This includes literals, variable identifiers, function calls, array indexing,
+ * and memory referencing (borrowing).
+ *
+ * Grammar:
  * Primary -> INTLIT | STRLIT | IDENT ('(' args? ')')? ('[' expr ']')* | '[' items? ']' | '&' Primary
  */
 static Expr *parse_primary() {
@@ -94,7 +96,7 @@ static Expr *parse_primary() {
 
         Expr *base = expr_ident(name, l, c);
 
-        // Pencabangan untuk Function Call: ident(...)
+        // Branching for Function Calls: ident(...)
         if (tok_is(T_LPAREN)) {
             nexttok();
             Expr **args = NULL;
@@ -117,7 +119,7 @@ static Expr *parse_primary() {
             base = expr_call(name, args, nargs, l, c);
         }
 
-        // Pencabangan untuk Postfix Array Indexing: ident[idx]
+        // Branching for Postfix Array Indexing: ident[idx]
         while (tok_is(T_LBRACKET)) {
             nexttok();
             Expr *idx = parse_expr();
@@ -128,7 +130,7 @@ static Expr *parse_primary() {
         return base;
     }
 
-    // Handle Array Literal: [1, 2, 3]
+    // Handle Array Literals: [1, 2, 3]
     if (tok_is(T_LBRACKET)) {
         nexttok();
         Expr **items = NULL;
@@ -151,7 +153,7 @@ static Expr *parse_primary() {
         return expr_array(items, count, l, c);
     }
 
-    // Handle Borrowing / Referencing: &x atau &mut x
+    // Handle Borrowing / Referencing: &x or &mut x
     if (tok_is(T_AND) || tok_is(T_ANDMUT)) {
         bool mut = tok_is(T_ANDMUT);
         nexttok();
@@ -164,9 +166,10 @@ static Expr *parse_primary() {
 }
 
 /**
- * @brief Entry point untuk parsing ekspresi.
- * Saat ini menangani operator Range (..) dengan presedensi terendah.
- * * Grammar: Expr -> Primary ( '..' Primary )?
+ * @brief Entry point for expression parsing.
+ * Currently handles the Range operator (..) with the lowest precedence.
+ *
+ * Grammar: Expr -> Primary ( '..' Primary )?
  */
 static Expr *parse_expr() {
     Expr *lhs = parse_primary();
@@ -186,8 +189,9 @@ static Expr *parse_expr() {
    --------------------------------------------------------- */
 
 /**
- * @brief Dispatcher utama untuk berbagai jenis statement.
- * Menangani deklarasi (let), perulangan (for), blok kode, dan expression statements.
+ * @brief Main dispatcher for various statement types.
+ * Handles variable declarations (let), loops (for), code blocks, 
+ * and expression-based statements.
  */
 static Stmt *parse_stmt() {
     int l = cur.line, c = cur.col;
@@ -204,7 +208,7 @@ static Stmt *parse_stmt() {
         snprintf(name, sizeof(name), "%s", cur.lexeme);
         nexttok();
 
-        Type ty = mktype(TY_UNKNOWN); // Default untuk Type Inference
+        Type ty = mktype(TY_UNKNOWN); // Default for Type Inference
         Expr *init = NULL;
 
         // Optional Type Annotation: let x: int
@@ -221,7 +225,7 @@ static Stmt *parse_stmt() {
             }
         }
 
-        // Optional Assignment
+        // Optional Assignment: let x = expression;
         if (tok_is(T_EQ)) {
             nexttok();
             init = parse_expr();
@@ -255,15 +259,15 @@ static Stmt *parse_stmt() {
         return parse_block();
     }
 
-    // 4. Expression Statement: call();
+    // 4. Expression Statement: call_func();
     Expr *e = parse_expr();
     expect(T_SEMI, "';'");
     return stmt_expr(e, l, c);
 }
 
 /**
- * @brief Memproses sekumpulan statement di dalam kurung kurawal.
- * Mengimplementasikan scoping level pada level sintaksis.
+ * @brief Processes a sequence of statements within curly braces.
+ * This establishes a new lexical scope at the syntax level.
  */
 static Stmt *parse_block() {
     int l = cur.line, c = cur.col;
@@ -290,29 +294,30 @@ static Stmt *parse_block() {
    --------------------------------------------------------- */
 
 /**
- * @brief Fungsi utama untuk memulai proses parsing program.
- * Inisialisasi lexer dan membangun root node dari AST (biasanya fungsi main).
- * * @param filename Path file sumber yang akan diparsing.
- * @return Function* Pointer ke root node AST program.
+ * @brief High-level entry point to begin program parsing.
+ * Initializes the lexer and builds the root node of the AST.
+ *
+ * @param filename Path to the source file to be parsed.
+ * @return Function* Pointer to the AST root node.
  */
 Function *parse_program(const char *filename) {
-    // Inisialisasi stream scanner
+    // Initialize the token stream scanner
     lexer_init(&L, filename);
     
-    // Seed lookahead pertama
+    // Seed the first lookahead token
     nexttok();
 
     Stmt **list = NULL;
     int n = 0;
 
-    // Parsing hingga End of File
+    // Parse until the End of File is reached
     while (!tok_is(T_EOF)) {
         Stmt *s = parse_stmt();
         list = realloc(list, sizeof(Stmt *) * (n + 1));
         list[n++] = s;
     }
 
-    // Membungkus semua statement global ke dalam blok fungsi main implisit
+    // Wrap all global statements into an implicit main function block
     Stmt *body = stmt_block(list, n, 0, 0);
     return make_main(body);
 }
