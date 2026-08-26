@@ -1,8 +1,15 @@
 /**
  * @file main.c
- * @brief Entry point for the mycc compiler frontend.
- * * This module orchestrates the compilation pipeline: Lexing/Parsing, 
- * Semantic Analysis (including borrow checking), and x86_64 Code Generation.
+ * @brief Compiler frontend driver for MyLang.
+ *
+ * Orchestrates the compilation pipeline:
+ *   - Command-line argument parsing
+ *   - Lexical analysis and parsing (AST generation)
+ *   - Semantic analysis (type checking and inference)
+ *   - Borrow checking (ownership and borrowing rules)
+ *   - x86_64 code generation (NASM assembly)
+ *
+ * The compiler exits with a non-zero status if any phase fails.
  */
 
 #include <stdio.h>
@@ -10,89 +17,143 @@
 #include <string.h>
 #include <stdbool.h>
 
-/* Internal compiler phase headers */
 #include "../include/lexer.h"
 #include "../include/parser.h"
 #include "../include/semantic.h"
+#include "../include/borrowchecker.h"
 #include "../include/codegen.h"
 #include "../include/common.h"
 
+#define MAX_PATH 256
+
 /**
- * @brief Prints CLI usage instructions and terminates the process.
+ * @brief Prints usage information to stderr and terminates the process.
+ *
+ * @param progname The name of the executable as passed to main().
  */
-static void usage() {
-    fprintf(stderr, "Usage: mycc <input.my> -o <output> [--debug-borrow]\n");
-    exit(1);
+static void print_usage_and_exit(const char *progname) {
+    fprintf(stderr, "Usage: %s <input.my> -o <output> [--debug-borrow]\n", progname);
+    exit(EXIT_FAILURE);
 }
 
 /**
- * @brief Main execution loop for the compiler.
- * * Implements a linear compilation pass:
- * 1. CLI Argument Parsing
- * 2. Abstract Syntax Tree (AST) Generation (via parse_program)
- * 3. Static Analysis & Type Checking (via semantic_check)
- * 4. Assembly Generation (via codegen_function)
+ * @brief Parses command-line arguments and populates configuration pointers.
+ *
+ * @param argc      Argument count from main().
+ * @param argv      Argument vector from main().
+ * @param input     Output parameter: source file path.
+ * @param outfile   Output parameter: output binary base name.
+ * @param debug     Output parameter: debug_borrow flag.
+ * @return true if arguments are valid, false otherwise.
+ */
+static bool parse_arguments(int argc, char **argv,
+                            const char **input,
+                            const char **outfile,
+                            bool *debug) {
+    if (argc < 4) {
+        print_usage_and_exit(argv[0]);
+        return false;
+    }
+
+    *input = NULL;
+    *outfile = NULL;
+    *debug = false;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--debug-borrow") == 0) {
+            *debug = true;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 >= argc) {
+                print_usage_and_exit(argv[0]);
+                return false;
+            }
+            *outfile = argv[++i];
+        } else if (argv[i][0] != '-') {
+            *input = argv[i];
+        }
+    }
+
+    if (!*input || !*outfile) {
+        print_usage_and_exit(argv[0]);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Constructs the assembly output filename from the output base name.
+ *
+ * @param outfile   Base output name (e.g., "program").
+ * @param asmfile   Output buffer to hold the .asm filename.
+ */
+static void build_assembly_filename(const char *outfile, char *asmfile) {
+    snprintf(asmfile, MAX_PATH, "%s.asm", outfile);
+}
+
+/**
+ * @brief Displays post-compilation build instructions for the user.
+ *
+ * @param asmfile   Assembly file name.
+ * @param outfile   Output binary base name.
+ */
+static void print_build_instructions(const char *asmfile, const char *outfile) {
+    printf("Assembly generated: %s\n", asmfile);
+    printf("\nLinking instructions:\n");
+
+#ifdef _WIN32
+    printf("  nasm -f win64 %s -o %s.obj\n", asmfile, outfile);
+    printf("  gcc %s.obj runtime.o -o %s.exe\n", outfile, outfile);
+    printf("  .\\%s.exe\n", outfile);
+#else
+    printf("  nasm -f elf64 %s -o %s.o\n", asmfile, outfile);
+    printf("  gcc %s.o runtime.o -o %s\n", outfile, outfile);
+    printf("  ./%s\n", outfile);
+#endif
+}
+
+/**
+ * @brief Main entry point for the MyLang compiler.
+ *
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return EXIT_SUCCESS on success, EXIT_FAILURE on error.
  */
 int main(int argc, char **argv) {
-    /* Minimum required: <bin> <input> -o <output> */
-    if (argc < 4) usage();
-
     const char *input = NULL;
     const char *outfile = NULL;
     bool debug_borrow = false;
 
-    /* --- Command Line Interface (CLI) Parsing --- */
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--debug-borrow") == 0) {
-            debug_borrow = true;
-        } else if (strcmp(argv[i], "-o") == 0) {
-            if (i + 1 >= argc) usage();
-            outfile = argv[++i];
-        } else if (argv[i][0] != '-') {
-            input = argv[i];
-        }
+    /* Parse command-line arguments */
+    if (!parse_arguments(argc, argv, &input, &outfile, &debug_borrow)) {
+        return EXIT_FAILURE;
     }
 
-    /* Validate mandatory arguments */
-    if (!input || !outfile) usage();
+    /* Prepare output assembly file path */
+    char asmfile[MAX_PATH];
+    build_assembly_filename(outfile, asmfile);
 
-    /* Prepare intermediate assembly filename buffer */
-    char asmfile[256];
-    snprintf(asmfile, sizeof(asmfile), "%s.asm", outfile);
-
-    /* --- Compilation Pipeline --- */
-
-    // Phase 1: Parsing (Lexing is handled internally by the parser)
-    // Returns the root of the AST (Function node)
-    Function *f = parse_program(input);
-
-    // Phase 2: Semantic Analysis
-    // Performs type checking and validates ownership/borrow rules
-    semantic_check(f, input);
-
-    // Phase 3: Code Generation
-    // Emits x86_64 assembly to the .asm file and handles final binary output
-    if (codegen_function(f, asmfile, outfile, debug_borrow) != 0) {
-        fprintf(stderr, "Error: Codegen failed for input '%s'\n", input);
-        return 1;
+    /* Phase 1: Parse source code into AST */
+    Function *func = parse_program(input);
+    if (!func) {
+        fprintf(stderr, "Error: parsing failed for '%s'\n", input);
+        return EXIT_FAILURE;
     }
 
-    /* --- Post-Compilation Build Instructions --- */
-    printf("Successfully generated assembly: %s\n", asmfile);
-    
-#ifdef _WIN32
-    /* Windows (Win64) build steps using NASM and GCC */
-    printf("To link and run:\n");
-    printf(">> nasm -f win64 %s -o %s.obj\n", asmfile, outfile);
-    printf(">> gcc %s.obj runtime.o -o %s.exe\n", outfile, outfile);
-    printf(">> .\\\\%s.exe\n", outfile);
-#else
-    /* Unix/Linux (ELF64) build steps using NASM and GCC */
-    printf("To link and run:\n");
-    printf(">> nasm -f elf64 %s -o %s.o\n", asmfile, outfile);
-    printf(">> gcc %s.o runtime.o -o %s\n", outfile, outfile);
-    printf(">> ./%s\n", outfile);
-#endif
+    /* Phase 2: Semantic analysis (type checking and inference) */
+    semantic_check(func, input);
 
-    return 0;
+    /* Phase 3: Borrow checking (ownership and borrowing rules) */
+    borrow_check(func, input);
+
+    /* Phase 4: Code generation (x86_64 NASM assembly) */
+    if (codegen_function(func, asmfile, outfile, debug_borrow) != 0) {
+        fprintf(stderr, "Error: code generation failed for '%s'\n", input);
+        return EXIT_FAILURE;
+    }
+
+    /* Phase 5: Display build instructions */
+    print_build_instructions(asmfile, outfile);
+
+    return EXIT_SUCCESS;
 }
